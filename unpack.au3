@@ -157,7 +157,7 @@ Func processChunkInfo()
 	$iCRC32_unknown = _BinaryReverse((BinaryMid($sFileContents, $iPos + 5, 4))) ; remember - autoit is 1-based byte offsets
 	; get the footer command (or whatever it is)
 	$sFooterCmd = BinaryMid($sFileContents, $iPos + 1 + 8)
-	ConsoleWrite("[i] Footer command (raw binary for display purposes only) = " & $sFooterCmd & @CRLF)
+	ConsoleWrite("[i] Footer command (raw binary) = " & $sFooterCmd & @CRLF)
 EndFunc
 
 Func extractChunks()
@@ -166,7 +166,7 @@ Func extractChunks()
 	For $i = 1 To $iTotalChunks
 		$sExtension = _getChunkExtensionByType($aPartType[$i - 1])
 		$sFilename = $aPartLabel[($i - 1)] & $sExtension
-		ConsoleWrite(@CR & "[#] Writing-out chunk " & $i & "/" & $iTotalChunks & " to " & $sFilename & "...             ")
+		ConsoleWrite("[#] Writing-out chunk " & $i & "/" & $iTotalChunks & " to " & $sFilename & "..." & @CRLF)
 		$hOutput = FileOpen(@ScriptDir & "\unpacked\" & $sFilename, $FO_OVERWRITE)
 		$iStart = Dec($aPartOffset[$i-1]) + 1
 		$iLength = Dec($aPartLength[$i-1])
@@ -174,7 +174,6 @@ Func extractChunks()
 		FileWrite($hOutput, $xData)
 		FileClose($hOutput) ; FileClose will flush buffers automatically
 	Next
-	ConsoleWrite(@CRLF)
 EndFunc
 
 Func dumpInfo()
