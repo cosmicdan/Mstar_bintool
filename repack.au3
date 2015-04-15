@@ -13,8 +13,6 @@
 
 Global $iCRC32_script
 
-Global $sOutputFile = @ScriptDir & "\MstarUpgrade.bin.out"
-
 If Not FileExists(@ScriptDir & "\unpacked") Then
 	ConsoleWrite("[!] Folder 'unpacked' does not exist. Unpack something first." & @CRLF)
 	Exit
@@ -26,36 +24,45 @@ If FileExists(@ScriptDir & "\MstarUpgrade.bin.out") Then
 	FileDelete(@ScriptDir & "\MstarUpgrade.bin.out")
 EndIf
 
-Global $hOutput = FileOpen($sOutputFile, $FO_APPEND + $FO_BINARY)
+Global $sOutput = @ScriptDir & "\MstarUpgrade.bin.out"
+Global $sOutputTmpHeader = $sOutput & ".tmp.1"
+Global $sOutputTmpChunks = $sOutput & ".tmp.2"
+
+Global $hOutput = FileOpen($sOutput, $FO_APPEND + $FO_BINARY)
+Global $hOutputTmpHeader = FileOpen($sOutput & ".tmp.1", $FO_OVERWRITE + $FO_BINARY)
+Global $hOutputTmpChunks = FileOpen($sOutput & ".tmp.2", $FO_OVERWRITE + $FO_BINARY)
 
 writeHeader()
-writeChunks()
-writeFooter()
+;writeChunks()
+joinHeaderAndChunks()
+;writeFooter()
 
 Func writeHeader()
 	; write-out the header script
 	ConsoleWrite("[#] Writing header..." & @CRLF)
 	$hInput = FileOpen(@ScriptDir & "\unpacked\~bundle_script", $FO_READ + $FO_BINARY)
-	FileWrite($hOutput, FileRead($hInput))
+	FileWrite($hOutputTmpHeader, FileRead($hInput))
+	FileFlush($hOutputTmpHeader)
 	FileClose($hInput)
+	; pad the script to 16KB
+	$iPadding = 16384 - FileGetSize($sOutputTmpHeader)
+	For $i = 1 To $iPadding
+		FileWrite($hOutputTmpHeader, Chr(0xFF))
+	Next
+	FileFlush($hOutputTmpHeader)
 	; calculate the new script CRC for later
-	$iPID = Run(@ComSpec & " /c " & @ScriptDir & '\inc\crc32 ' & $sOutputFile, @ScriptDir, @SW_HIDE, $STDERR_MERGED)
-	Local $sOutput = ""
+	$iPID = Run(@ComSpec & " /c " & @ScriptDir & '\inc\crc32 ' & $sOutputTmpHeader, @ScriptDir, @SW_HIDE, $STDERR_MERGED)
+	$sCmdOutput = ""
 	Do
-		$sOutput &= StdoutRead($iPID)
+		$sCmdOutput &= StdoutRead($iPID)
 	Until @error
-	$aResult = StringSplit($sOutput, " ")
+	$aResult = StringSplit($sCmdOutput, " ")
 	If Not $aResult[0] = 2 Then
 		ConsoleWrite("[!] Error calculating CRC!" & @CRLF)
 		Exit
 	EndIf
 	$iCRC32_script = StringReplace($aResult[1], "0x", "")
 	ConsoleWrite("[i] Header script CRC32 = " & $iCRC32_script & @CRLF)
-	; pad the script to 16KB
-	$iPadding = 16384 - FileGetSize($sOutputFile)
-	For $i = 1 To $iPadding
-		FileWrite($hOutput, Chr(0xFF))
-	Next
 EndFunc
 
 Func writeChunks()
@@ -65,29 +72,42 @@ Func writeChunks()
 		$aChunkInfo = IniReadSection(@ScriptDir & "\unpacked\~bundle_info.ini", "chunk" & $i)
 		$sName = $aChunkInfo[1][1]
 		$sExtension = _getChunkExtensionByType($aChunkInfo[2][1])
-		; write-out this chunk
 		ConsoleWrite("[#] Adding chunk " & $i & "/" & $iTotalChunks & " (" & $sName & $sExtension & ")...             " & @CRLF)
+		; calculate new offset and size for this chunk (for updating header script)
+		$iOldOffset = Dec($aChunkInfo[3][1])
+		$iOldSize = Dec($aChunkInfo[4][1])
+		$iNewOffset = 16384 + FileGetSize($hOutputTmpChunks) ; returns 0 if file doesn't exist
+		$iNewSize = FileGetSize(@ScriptDir & "\unpacked\" & $sName & $sExtension)
+		;ConsoleWrite("    [i] Old size@offset = " & $iOldSize & "@" & $iOldOffset & @CRLF)
+		;ConsoleWrite("    [i] New size@offset = " & $iNewSize & "@" & $iNewOffset & @CRLF)
+		;ExitLoop
+		; write-out this chunk
 		$hInput = FileOpen(@ScriptDir & "\unpacked\" & $sName & $sExtension, $FO_READ + $FO_BINARY)
-		FileWrite($hOutput, FileRead($hInput))
-		FileFlush($hOutput)
+		FileWrite($hOutputTmpChunks, FileRead($hInput))
+		FileFlush($hOutputTmpChunks)
 		FileClose($hInput)
 		; pad the file to the next 8KB boundary
-		$iFileSize = FileGetSize($sOutputFile)
+		$iFileSize = FileGetSize($hOutputTmpChunks)
 		$iPadding = 0
 		While 1
 			If Mod(($iFileSize + $iPadding), 8192) = 0 Then
-				;ConsoleWrite("    [i] File size before padding = " & FileGetSize($sOutputFile) & @CRLF)
-				For $i = 1 To $iPadding
-					FileWrite($hOutput, Chr(0xFF))
+				;ConsoleWrite("    [i] File size before padding = " & FileGetSize($sOutputTmpChunks & ".tmp.2") & @CRLF)
+				For $j = 1 To $iPadding
+					FileWrite($hOutputTmpChunks, Chr(0xFF))
 				Next
-				FileFlush($hOutput)
-				;ConsoleWrite("    [i] Added padding of " & $iPadding & " bytes; new file size = " & FileGetSize($sOutputFile) & @CRLF)
+				FileFlush($hOutputTmpChunks)
+				;ConsoleWrite("    [i] Added padding of " & $iPadding & " bytes; new file size = " & FileGetSize($sOutputTmpChunks & ".tmp.2") & @CRLF)
 				ExitLoop
 			Else
 				$iPadding = $iPadding + 1
 			EndIf
 		WEnd
+
 	Next
+EndFunc
+
+Func joinHeaderAndChunks()
+	; TODO
 EndFunc
 
 Func writeFooter()
