@@ -33,21 +33,17 @@ writeChunks()
 writeFooter()
 
 Func writeHeader()
+	; write-out the header script
 	ConsoleWrite("[#] Writing header..." & @CRLF)
 	$hInput = FileOpen(@ScriptDir & "\unpacked\~bundle_script", $FO_READ + $FO_BINARY)
 	FileWrite($hOutput, FileRead($hInput))
 	FileClose($hInput)
-	$iPadding = IniRead(@ScriptDir & "\unpacked\~bundle_info.ini", "common", "script_padding", 0)
-	For $i = 1 To $iPadding
-		FileWrite($hOutput, Chr(0xFF))
-	Next
-	; calculate the new script CRC
+	; calculate the new script CRC for later
 	$iPID = Run(@ComSpec & " /c " & @ScriptDir & '\inc\crc32 ' & $sOutputFile, @ScriptDir, @SW_HIDE, $STDERR_MERGED)
 	Local $sOutput = ""
 	Do
 		$sOutput &= StdoutRead($iPID)
 	Until @error
-	;ConsoleWrite($sOutput & @CRLF)
 	$aResult = StringSplit($sOutput, " ")
 	If Not $aResult[0] = 2 Then
 		ConsoleWrite("[!] Error calculating CRC!" & @CRLF)
@@ -55,6 +51,11 @@ Func writeHeader()
 	EndIf
 	$iCRC32_script = StringReplace($aResult[1], "0x", "")
 	ConsoleWrite("[i] Header script CRC32 = " & $iCRC32_script & @CRLF)
+	; pad the script to 16KB
+	$iPadding = 16384 - FileGetSize($sOutputFile)
+	For $i = 1 To $iPadding
+		FileWrite($hOutput, Chr(0xFF))
+	Next
 EndFunc
 
 Func writeChunks()
