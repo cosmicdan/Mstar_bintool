@@ -15,7 +15,7 @@ Global Const $MEM_ADDR = "20200000"
 Global Const $FILE_PART_CMD = "filepartload " & $MEM_ADDR & " MstarUpgrade.bin"
 
 Global $aPartOffset[0]
-Global $aPartLength[0]
+Global $aPartSize[0]
 Global $aPartLabel[0]
 Global $aPartType[0]
 
@@ -72,7 +72,7 @@ Func processChunkInfo()
 			$sLine = StringReplace($aFileLines[$i], $sMatchPattern, "")
 			$aOffsetAndSize = StringSplit($sLine, " ")
 			_ArrayAdd($aPartOffset, $aOffsetAndSize[1])
-			_ArrayAdd($aPartLength, $aOffsetAndSize[2])
+			_ArrayAdd($aPartSize, $aOffsetAndSize[2])
 			; try and determine the label for this chunk
 			If _StringContains($aFileLines[$i + 1], "mmc write.p " & $MEM_ADDR & " ") Then
 				$sLine = StringReplace($aFileLines[$i + 1], "mmc write.p " & $MEM_ADDR & " ", "")
@@ -147,9 +147,9 @@ Func extractChunks()
 		$sFilename = $aPartLabel[($i - 1)] & $sExtension
 		ConsoleWrite("[#] Writing-out chunk " & $i & "/" & $iTotalChunks & " to " & $sFilename & "..." & @CRLF)
 		$hOutput = FileOpen(@ScriptDir & "\unpacked\" & $sFilename, $FO_OVERWRITE)
-		$iStart = Dec($aPartOffset[$i-1]) + 1
-		$iLength = Dec($aPartLength[$i-1])
-		$xData = BinaryMid($sFileContents, $iStart, $iLength)
+		$iOffset = Dec($aPartOffset[$i-1]) + 1
+		$iSize = Dec($aPartSize[$i-1])
+		$xData = BinaryMid($sFileContents, $iOffset, $iSize)
 		FileWrite($hOutput, $xData)
 		FileClose($hOutput) ; FileClose will flush buffers automatically
 	Next
@@ -162,7 +162,7 @@ Func dumpInfo()
 	IniWrite(@ScriptDir & "\unpacked\~bundle_info.ini", "common", "crc32_unknown", $iCRC32_unknown)
 	IniWrite(@ScriptDir & "\unpacked\~bundle_info.ini", "common", "footer_cmd", $sFooterCmd)
 	FileWriteLine(@ScriptDir & "\unpacked\~bundle_info.ini", "; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-	FileWriteLine(@ScriptDir & "\unpacked\~bundle_info.ini", "; NOTICE! Do NOT change the offset/length values of the chunks - they need to match the")
+	FileWriteLine(@ScriptDir & "\unpacked\~bundle_info.ini", "; NOTICE! Do NOT change the offset/size values of the chunks - they need to match the")
 	FileWriteLine(@ScriptDir & "\unpacked\~bundle_info.ini", "; existing values in ~bundle_script. The repack script will update them automatically.")
 	FileWriteLine(@ScriptDir & "\unpacked\~bundle_info.ini", "; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 	For $i = 1 To UBound($aPartLabel)
@@ -170,7 +170,7 @@ Func dumpInfo()
 		IniWrite(@ScriptDir & "\unpacked\~bundle_info.ini", "chunk" & $i, "label", $aPartLabel[$i - 1])
 		IniWrite(@ScriptDir & "\unpacked\~bundle_info.ini", "chunk" & $i, "type", $aPartType[$i - 1])
 		IniWrite(@ScriptDir & "\unpacked\~bundle_info.ini", "chunk" & $i, "offset", $aPartOffset[$i - 1])
-		IniWrite(@ScriptDir & "\unpacked\~bundle_info.ini", "chunk" & $i, "length", $aPartLength[$i - 1])
+		IniWrite(@ScriptDir & "\unpacked\~bundle_info.ini", "chunk" & $i, "size", $aPartSize[$i - 1])
 		FileWriteLine(@ScriptDir & "\unpacked\~bundle_info.ini", "")
 	Next
 EndFunc
