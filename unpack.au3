@@ -19,10 +19,6 @@ Global $aPartLength[0]
 Global $aPartLabel[0]
 Global $aPartType[0]
 
-Global $iPostHeaderPadding = 0
-Global $aPostChunkPadding[0]
-
-Global $iCRC32_script
 Global $iCRC32_unknown
 Global $sFooterCmd
 
@@ -120,16 +116,6 @@ Func processChunkInfo()
 				ConsoleWrite("    [!] Error - could not determine partition label/type for data chunk @ line " & $i & @CRLF)
 				Exit
 			EndIf
-			; set the post-header padding if needed
-			If $iPostHeaderPadding = 0 Then
-				$iPostHeaderPadding = Dec($aOffsetAndSize[1]) - $iLastPos
-				ConsoleWrite("    [i] Post-header padding = " & $iPostHeaderPadding & " bytes (" & _BinaryReverse(_BinaryFromInt16($iPostHeaderPadding)) & ")" & @CRLF)
-			Else
-				; set the post-partition padding
-				$iPadding = (Dec($aOffsetAndSize[1]) - $iLastPos)
-				ConsoleWrite(" (+ " & $iPadding & " bytes padding)" & @CRLF)
-				_ArrayAdd($aPostChunkPadding, $iPadding)
-			EndIf
 			; update the last position for next run
 			$iLastPos = Dec($aOffsetAndSize[1]) + Dec($aOffsetAndSize[2])
 			ConsoleWrite("    [i] Chunk " & UBound($aPartLabel) & ": " & $aPartLabel[(UBound($aPartLabel) - 1)] & " = " & $aOffsetAndSize[2] & "@" & $aOffsetAndSize[1]) ; line feed added on next run (after padding print)
@@ -144,15 +130,8 @@ Func processChunkInfo()
 		ConsoleWrite(@CRLF & "[!] Could not find magic footer!" & @CRLF)
 		Exit
 	EndIf
-	$iPadding = ($iPos - $iLastPos)
-	ConsoleWrite(" (+ " & $iPadding & " bytes padding)" & @CRLF)
-	_ArrayAdd($aPostChunkPadding, $iPadding)
 	; skip-over the magic numbers
 	$iPos += 8
-	; grab the CRC32
-	ConsoleWrite("[i] CRC32 (script) = ")
-	$iCRC32_script = _BinaryReverse((BinaryMid($sFileContents, $iPos + 1, 4))) ; remember - autoit is 1-based byte offsets
-	ConsoleWrite($iCRC32_script & @CRLF)
 	; get the second CRC32, whatever it is
 	$iCRC32_unknown = _BinaryReverse((BinaryMid($sFileContents, $iPos + 5, 4))) ; remember - autoit is 1-based byte offsets
 	; get the footer command (or whatever it is)
@@ -180,22 +159,19 @@ Func dumpInfo()
 	ConsoleWrite("[#] Moving header script..." & @CRLF)
 	FileMove(@ScriptDir & "\~bundle_script", @ScriptDir & "\unpacked\~bundle_script", $FC_OVERWRITE)
 	ConsoleWrite("[#] Writing-out bundle information..." & @CRLF)
-	;FileWrite(@ScriptDir & "\unpacked\99_crc32", $iCRC32_script)
-	IniWrite(@ScriptDir & "\unpacked\~bundle_info.ini", "common", "crc32_script", $iCRC32_script)
 	IniWrite(@ScriptDir & "\unpacked\~bundle_info.ini", "common", "crc32_unknown", $iCRC32_unknown)
-	;FileWrite(@ScriptDir & "\unpacked\99_footer", $sFooterCmd)
 	IniWrite(@ScriptDir & "\unpacked\~bundle_info.ini", "common", "footer_cmd", $sFooterCmd)
-	;FileWrite(@ScriptDir & "\unpacked\99_headerpadding", $iPostHeaderPadding)
-	IniWrite(@ScriptDir & "\unpacked\~bundle_info.ini", "common", "script_padding", $iPostHeaderPadding)
-
+	FileWriteLine(@ScriptDir & "\unpacked\~bundle_info.ini", "; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+	FileWriteLine(@ScriptDir & "\unpacked\~bundle_info.ini", "; NOTICE! Do NOT change the offset/length values of the chunks - they need to match the")
+	FileWriteLine(@ScriptDir & "\unpacked\~bundle_info.ini", "; existing values in ~bundle_script. The repack script will update them automatically.")
+	FileWriteLine(@ScriptDir & "\unpacked\~bundle_info.ini", "; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 	For $i = 1 To UBound($aPartLabel)
 		; write out the padding info for each chunk
-		; _FileWriteFromArray(@ScriptDir & "\unpacked\99_chunk-padding", $aPostChunkPadding)
 		IniWrite(@ScriptDir & "\unpacked\~bundle_info.ini", "chunk" & $i, "label", $aPartLabel[$i - 1])
 		IniWrite(@ScriptDir & "\unpacked\~bundle_info.ini", "chunk" & $i, "type", $aPartType[$i - 1])
-		IniWrite(@ScriptDir & "\unpacked\~bundle_info.ini", "chunk" & $i, "padding", $aPostChunkPadding[$i - 1])
 		IniWrite(@ScriptDir & "\unpacked\~bundle_info.ini", "chunk" & $i, "offset", $aPartOffset[$i - 1])
 		IniWrite(@ScriptDir & "\unpacked\~bundle_info.ini", "chunk" & $i, "length", $aPartLength[$i - 1])
+		FileWriteLine(@ScriptDir & "\unpacked\~bundle_info.ini", "")
 	Next
 EndFunc
 
