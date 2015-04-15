@@ -61,18 +61,32 @@ EndFunc
 Func writeChunks()
 	$iTotalChunks = (IniReadSectionNames(@ScriptDir & "\unpacked\~bundle_info.ini"))[0] - 1 ; element 0 is the number of elements and [common] section is of no significance
 	For $i = 1 To $iTotalChunks
+		; get INI info for this chunk
 		$aChunkInfo = IniReadSection(@ScriptDir & "\unpacked\~bundle_info.ini", "chunk" & $i)
 		$sName = $aChunkInfo[1][1]
 		$sExtension = _getChunkExtensionByType($aChunkInfo[2][1])
-		;ConsoleWrite($sName & $sExtension & @CRLF)
+		; write-out this chunk
 		ConsoleWrite("[#] Adding chunk " & $i & "/" & $iTotalChunks & " (" & $sName & $sExtension & ")...             " & @CRLF)
 		$hInput = FileOpen(@ScriptDir & "\unpacked\" & $sName & $sExtension, $FO_READ + $FO_BINARY)
 		FileWrite($hOutput, FileRead($hInput))
+		FileFlush($hOutput)
 		FileClose($hInput)
-		$iPadding = $aChunkInfo[3][1]
-		For $j = 1 To $iPadding
-			FileWrite($hOutput, Chr(0xFF))
-		Next
+		; pad the file to the next 8KB boundary
+		$iFileSize = FileGetSize($sOutputFile)
+		$iPadding = 0
+		While 1
+			If Mod(($iFileSize + $iPadding), 8192) = 0 Then
+				;ConsoleWrite("    [i] File size before padding = " & FileGetSize($sOutputFile) & @CRLF)
+				For $i = 1 To $iPadding
+					FileWrite($hOutput, Chr(0xFF))
+				Next
+				FileFlush($hOutput)
+				;ConsoleWrite("    [i] Added padding of " & $iPadding & " bytes; new file size = " & FileGetSize($sOutputFile) & @CRLF)
+				ExitLoop
+			Else
+				$iPadding = $iPadding + 1
+			EndIf
+		WEnd
 	Next
 EndFunc
 
