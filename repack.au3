@@ -11,6 +11,8 @@
 #include "inc\Binary.au3"
 #include "inc\Common.au3"
 
+Global Const $iChunkPadding = 4096
+
 If Not FileExists(@ScriptDir & "\unpacked") Then
 	ConsoleWrite("[!] Folder 'unpacked' does not exist. Unpack something first." & @CRLF)
 	Exit
@@ -38,7 +40,7 @@ readHeader()
 writeChunks()
 writeHeader()
 joinHeaderAndChunks()
-;writeFooter()
+writeFooter()
 cleanup()
 
 Func checkFiles()
@@ -88,16 +90,16 @@ Func writeChunks()
 		FileFlush($hOutputTmpChunks)
 		FileClose($hInput)
 		; pad the file to the next 8KB boundary
-		$iFileSize = FileGetSize($hOutputTmpChunks)
+		$iFileSize = FileGetSize($sOutputTmpChunks)
 		$iPadding = 0
 		While 1
-			If Mod(($iFileSize + $iPadding), 8192) = 0 Then
-				;ConsoleWrite("    [i] File size before padding = " & FileGetSize($sOutputTmpChunks & ".tmp.2") & @CRLF)
+			If Mod(($iFileSize + $iPadding), $iChunkPadding) = 0 Then
+				ConsoleWrite("    [i] File size before padding = " & $iFileSize & @CRLF)
 				For $k = 1 To $iPadding
 					FileWrite($hOutputTmpChunks, Chr(0xFF))
 				Next
 				FileFlush($hOutputTmpChunks)
-				;ConsoleWrite("    [i] Added padding of " & $iPadding & " bytes; new file size = " & FileGetSize($sOutputTmpChunks & ".tmp.2") & @CRLF)
+				ConsoleWrite("    [i] File size after padding = " & FileGetSize($sOutputTmpChunks) & @CRLF)
 				ExitLoop
 			Else
 				$iPadding = $iPadding + 1
