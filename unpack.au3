@@ -145,14 +145,50 @@ Func extractChunks()
 	For $i = 1 To $iTotalChunks
 		$sExtension = _getChunkExtensionByType($aPartType[$i - 1])
 		$sFilename = $aPartLabel[($i - 1)] & $sExtension
-		ConsoleWrite("[#] Writing-out chunk " & $i & "/" & $iTotalChunks & " to " & $sFilename & "..." & @CRLF)
+		If $sExtension = ".lzo" Then
+			ConsoleWrite("[#] Writing-out and decompressing chunk " & $i & "/" & $iTotalChunks & " to " & $sFilename & "..." & @CRLF)
+		Else
+			ConsoleWrite("[#] Writing-out chunk " & $i & "/" & $iTotalChunks & " to " & $sFilename & "..." & @CRLF)
+		EndIf
 		$hOutput = FileOpen(@ScriptDir & "\unpacked\" & $sFilename, $FO_OVERWRITE)
 		$iOffset = Dec($aPartOffset[$i-1]) + 1
 		$iSize = Dec($aPartSize[$i-1])
 		$xData = BinaryMid($sFileContents, $iOffset, $iSize)
 		FileWrite($hOutput, $xData)
 		FileClose($hOutput) ; FileClose will flush buffers automatically
+		; extract lzo-compressed images
+		If $sExtension = ".lzo" Then
+			RunWait(@ComSpec & ' /c ' & @ScriptDir & '\inc\lzop -x < ' & @ScriptDir & "\unpacked\" & $sFilename, @ScriptDir & "\unpacked", @SW_HIDE, $STDOUT_CHILD)
+			FileDelete(@ScriptDir & "\unpacked\" & $sFilename)
+		EndIf
 	Next
+	; join any "multi-volume" images
+	$hSearch1 = FileFindFirstFile(@ScriptDir & "\unpacked\*.imgaa")
+	Local $sImgFiles[0]
+	If $hSearch1 <> -1 Then
+		While 1
+			$sFilename = FileFindNextFile($hSearch1)
+			If @error Then ExitLoop
+			_ArrayAdd($sImgFiles, $sFilename)
+		WEnd
+		For $i = 1 To UBound($sImgFiles)
+			Local $sTmp
+			$aTmp = _PathSplit($sImgFiles[$i -1], $sTmp, $sTmp, $sTmp, $sTmp)
+			$sOutputImageName = $aTmp[3]
+			ConsoleWrite("[#] Re-assembling " & $sOutputImageName & ".img..." & @CRLF)
+			$hOutputImage = FileOpen(@ScriptDir & "\unpacked\" & $sOutputImageName & ".img", $FO_APPEND + $FO_BINARY)
+			$hSearch2 = FileFindFirstFile(@ScriptDir & "\unpacked\" & $sOutputImageName & ".imga?")
+			While 1
+				$sFilename = FileFindNextFile($hSearch2)
+				If @error Then ExitLoop
+				FileWrite($hOutputImage, FileRead(@ScriptDir & "\unpacked\" & $sFilename))
+				FileFlush($hOutputImage)
+				FileDelete(@ScriptDir & "\unpacked\" & $sFilename)
+			WEnd
+		Next
+	Else
+		ConsoleWrite("[i] No multi-volume images found" & @CRLF)
+	EndIf
 EndFunc
 
 Func dumpInfo()
