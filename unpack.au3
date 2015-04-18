@@ -18,6 +18,7 @@ Global $aPartOffset[0]
 Global $aPartSize[0]
 Global $aPartLabel[0]
 Global $aPartType[0]
+Global $aPartMulti[0]
 
 Global $iCRC32_unknown
 Global $sFooterCmd
@@ -73,6 +74,7 @@ Func processChunkInfo()
 			$aOffsetAndSize = StringSplit($sLine, " ")
 			_ArrayAdd($aPartOffset, $aOffsetAndSize[1])
 			_ArrayAdd($aPartSize, $aOffsetAndSize[2])
+			_ArrayAdd($aPartMulti, "0") ; false is default
 			; try and determine the label for this chunk
 			If _StringContains($aFileLines[$i + 1], "mmc write.p " & $MEM_ADDR & " ") Then
 				$sLine = StringReplace($aFileLines[$i + 1], "mmc write.p " & $MEM_ADDR & " ", "")
@@ -108,6 +110,12 @@ Func processChunkInfo()
 				$aSplit = StringSplit($sLine, " ")
 				_ArrayAdd($aPartLabel, $aSplit[2] & "." & $iChunkPart)
 				_ArrayAdd($aPartType, $PART_TYPE_LZO)
+				; set the "multi" flag to true for this chunk
+				$aPartMulti[UBound($aPartMulti) - 1] = 1
+				; also set the first-index of the multi to true, if necessary (i.e. when second 'volume' is detected, update the last one)
+				If $iChunkPart = 1 Then
+					$aPartMulti[UBound($aPartMulti) - 2] = 1
+				EndIf
 			ElseIf _StringContains($aFileLines[$i + 1], "mmc write.boot ") Then
 				_ArrayAdd($aPartLabel, "misc")
 				_ArrayAdd($aPartType, $PART_TYPE_MISC)
@@ -146,9 +154,9 @@ Func extractChunks()
 		$sExtension = _getChunkExtensionByType($aPartType[$i - 1])
 		$sFilename = $aPartLabel[($i - 1)] & $sExtension
 		If $sExtension = ".lzo" Then
-			ConsoleWrite("[#] Writing-out and decompressing chunk " & $i & "/" & $iTotalChunks & " to " & $sFilename & "..." & @CRLF)
+			ConsoleWrite("[#] Writing-out and decompressing chunk " & $i & "/" & $iTotalChunks & " (" & $sFilename & ")..." & @CRLF)
 		Else
-			ConsoleWrite("[#] Writing-out chunk " & $i & "/" & $iTotalChunks & " to " & $sFilename & "..." & @CRLF)
+			ConsoleWrite("[#] Writing-out chunk " & $i & "/" & $iTotalChunks & " (" & $sFilename & ")..." & @CRLF)
 		EndIf
 		$hOutput = FileOpen(@ScriptDir & "\unpacked\" & $sFilename, $FO_OVERWRITE)
 		$iOffset = Dec($aPartOffset[$i-1]) + 1
@@ -207,6 +215,7 @@ Func dumpInfo()
 		IniWrite(@ScriptDir & "\unpacked\~bundle_info.ini", "chunk" & $i, "type", $aPartType[$i - 1])
 		IniWrite(@ScriptDir & "\unpacked\~bundle_info.ini", "chunk" & $i, "offset", $aPartOffset[$i - 1])
 		IniWrite(@ScriptDir & "\unpacked\~bundle_info.ini", "chunk" & $i, "size", $aPartSize[$i - 1])
+		IniWrite(@ScriptDir & "\unpacked\~bundle_info.ini", "chunk" & $i, "multi", $aPartMulti[$i - 1])
 		FileWriteLine(@ScriptDir & "\unpacked\~bundle_info.ini", "")
 	Next
 EndFunc

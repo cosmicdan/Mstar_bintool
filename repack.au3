@@ -12,6 +12,8 @@
 #include "inc\Common.au3"
 
 Global Const $iChunkPadding = 4096
+Global Const $iMultiSizePerVol = 157286400 ; how many bytes each "volume" (in multi-volume LZO chunks) should be
+Global Const $sLzoCompression = "-5" ; -1 is faster, -9 is better. My tests have shown minimal improvement with anything more than 5.
 
 If Not FileExists(@ScriptDir & "\unpacked") Then
 	ConsoleWrite("[!] Folder 'unpacked' does not exist. Unpack something first." & @CRLF)
@@ -35,7 +37,6 @@ Global $iCRC32_script
 Global $aHeaderScript
 
 checkFiles()
-;cleanup()
 readHeader()
 writeChunks()
 writeHeader()
@@ -61,6 +62,7 @@ EndFunc
 
 Func writeChunks()
 	$iTotalChunks = (IniReadSectionNames(@ScriptDir & "\unpacked\~bundle_info.ini"))[0] - 1 ; element 0 is the number of elements and [common] section is of no significance
+	$sIntermediateMultiIndex = "a"
 	For $i = 1 To $iTotalChunks
 		; get INI info for this chunk
 		$aChunkInfo = IniReadSection(@ScriptDir & "\unpacked\~bundle_info.ini", "chunk" & $i)
@@ -73,7 +75,34 @@ Func writeChunks()
 		$sExtension = _getChunkExtensionByType($aChunkInfo[2][1])
 		$sChunkFilename = $sName & $sExtension
 		ConsoleWrite("[#] Adding chunk " & $i & "/" & $iTotalChunks & " (" & $sChunkFilename & ")...             " & @CRLF)
-		If Not FileExists @ScriptDir & "\unpacked\" & $sChunkFilename Then
+		If $sExtension = ".lzo" Then
+			Local $sTmp
+			$aTmp = _PathSplit($sChunkFilename, $sTmp, $sTmp, $sTmp, $sTmp)
+			$aTmp = _PathSplit($aTmp[3], $sTmp, $sTmp, $sTmp, $sTmp)
+			$sNameBare = $aTmp[3]
+			$iIndex = StringReplace($aTmp[4], ".", "")
+			If $aChunkInfo[5][1] = 1 Then
+				ConsoleWrite("    [#] Splitting to volume index " & $iIndex & " and recompressing..." & @CRLF)
+				; is a "multi-volume" LZO, dump the segment we need before compressing
+				$hVolumeInput = FileOpen(@ScriptDir & "\unpacked\" & $sNameBare & ".img", $FO_BINARY)
+				$sVolumeIntermediate = @ScriptDir & "\unpacked\" & $sNameBare & ".imga" & $sIntermediateMultiIndex
+				$hVolumeIntermediate = FileOpen($sVolumeIntermediate, $FO_OVERWRITE + $FO_BINARY)
+				FileWrite($hVolumeIntermediate, BinaryMid(FileRead($hVolumeInput), $iMultiSizePerVol * $iIndex + 1, $iMultiSizePerVol))
+				FileClose($hVolumeInput)
+				FileClose($hVolumeIntermediate)
+				; recompress it
+				RunWait(@ComSpec & ' /c ' & @ScriptDir & '\inc\lzop ' & $sLzoCompression & ' -o ' & @ScriptDir & "\unpacked\" & $sChunkFilename & ' < ' & $sVolumeIntermediate, @ScriptDir & "\unpacked", @SW_HIDE, $STDOUT_CHILD)
+				; increment the intermediate "volume index" (letter rather than number)
+				$sIntermediateMultiIndex = Chr(Asc($sIntermediateMultiIndex) + 1)
+				; delete the intermediate volume now that we're done recompressing it
+				FileDelete($sVolumeIntermediate)
+			Else
+				; not a multi-volume LZO, but still needs to be recompressed
+				ConsoleWrite("    [#] Recompressing..." & @CRLF)
+				RunWait(@ComSpec & ' /c ' & @ScriptDir & '\inc\lzop ' & $sLzoCompression & ' -o ' & @ScriptDir & "\unpacked\" & $sChunkFilename & ' < ' & $sNameBare & ".img", @ScriptDir & "\unpacked", @SW_HIDE, $STDOUT_CHILD)
+			EndIf
+		EndIf
+		If Not FileExists(@ScriptDir & "\unpacked\" & $sChunkFilename) Then
 			ConsoleWrite("    [!] WARNING! Chunk file missing, skipping. Ensure this chunk is removed" & @CRLF)
 			ConsoleWrite("        from the header script - otherwise flashing the device will fail!" & @CRLF)
 			ContinueLoop
@@ -105,18 +134,21 @@ Func writeChunks()
 		$iPadding = 0
 		While 1
 			If Mod(($iFileSize + $iPadding), $iChunkPadding) = 0 Then
-				ConsoleWrite("    [i] File size before padding = " & $iFileSize & @CRLF)
+				;ConsoleWrite("    [i] File size before padding = " & $iFileSize & @CRLF)
 				For $k = 1 To $iPadding
 					FileWrite($hOutputTmpChunks, Chr(0xFF))
 				Next
 				FileFlush($hOutputTmpChunks)
-				ConsoleWrite("    [i] File size after padding = " & FileGetSize($sOutputTmpChunks) & @CRLF)
+				;ConsoleWrite("    [i] File size after padding = " & FileGetSize($sOutputTmpChunks) & @CRLF)
 				ExitLoop
 			Else
 				$iPadding = $iPadding + 1
 			EndIf
 		WEnd
-
+		; delete the recompressed lzo file if necessary
+		If $sExtension = ".lzo" Then
+			FileDelete(@ScriptDir & "\unpacked\" & $sChunkFilename)
+		EndIf
 	Next
 EndFunc
 
@@ -142,7 +174,7 @@ Func writeHeader()
 		$sCmdOutput &= StdoutRead($iPID)
 	Until @error
 	$aResult = StringSplit($sCmdOutput, " ")
-	If Not $aResult[0] = 2 Then
+	If $aResult[0] <> 2 Then
 		ConsoleWrite("[!] Error calculating CRC!" & @CRLF)
 		Exit
 	EndIf
