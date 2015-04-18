@@ -31,3 +31,9 @@ Func _StringContains($sString, $sSearch)
 		Return False
 	EndIf
 EndFunc
+
+; trims leading zero's and converts letters to lowercase
+Func _procHex($sInput)
+	$sOutput = StringReplace($sInput, StringRegExpReplace($sInput, "[^0].*", ""), "")
+	Return StringLower($sOutput)
+EndFunc

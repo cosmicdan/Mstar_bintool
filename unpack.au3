@@ -118,7 +118,7 @@ Func processChunkInfo()
 			EndIf
 			; update the last position for next run
 			$iLastPos = Dec($aOffsetAndSize[1]) + Dec($aOffsetAndSize[2])
-			ConsoleWrite("    [i] Chunk " & UBound($aPartLabel) & ": " & $aPartLabel[(UBound($aPartLabel) - 1)] & " = " & $aOffsetAndSize[2] & "@" & $aOffsetAndSize[1]) ; line feed added on next run (after padding print)
+			ConsoleWrite("    [i] Chunk " & UBound($aPartLabel) & ": " & $aPartLabel[(UBound($aPartLabel) - 1)] & " = " & $aOffsetAndSize[2] & "@" & $aOffsetAndSize[1] & @CRLF)
 		EndIf
 	Next
 	; process the last-chunk padding
