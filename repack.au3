@@ -64,13 +64,24 @@ Func writeChunks()
 	For $i = 1 To $iTotalChunks
 		; get INI info for this chunk
 		$aChunkInfo = IniReadSection(@ScriptDir & "\unpacked\~bundle_info.ini", "chunk" & $i)
+		If @error Then
+			ConsoleWrite("    [!] WARNING! Chunk info missing, skipping. Ensure this chunk is removed" & @CRLF)
+			ConsoleWrite("        from the header script - otherwise flashing the device will fail!" & @CRLF)
+			ContinueLoop
+		EndIf
 		$sName = $aChunkInfo[1][1]
 		$sExtension = _getChunkExtensionByType($aChunkInfo[2][1])
-		ConsoleWrite("[#] Adding chunk " & $i & "/" & $iTotalChunks & " (" & $sName & $sExtension & ")...             " & @CRLF)
+		$sChunkFilename = $sName & $sExtension
+		ConsoleWrite("[#] Adding chunk " & $i & "/" & $iTotalChunks & " (" & $sChunkFilename & ")...             " & @CRLF)
+		If Not FileExists @ScriptDir & "\unpacked\" & $sChunkFilename Then
+			ConsoleWrite("    [!] WARNING! Chunk file missing, skipping. Ensure this chunk is removed" & @CRLF)
+			ConsoleWrite("        from the header script - otherwise flashing the device will fail!" & @CRLF)
+			ContinueLoop
+		EndIf
 		; Update the header script with new size@offset values
 		$sOldOffsetAndSize = StringReplace($aChunkInfo[3][1] & " " & $aChunkInfo[4][1], "0x", "")
 		$iNewOffset = 16384 + FileGetSize($sOutputTmpChunks) ; returns 0 if file doesn't exist
-		$iNewSize = FileGetSize(@ScriptDir & "\unpacked\" & $sName & $sExtension)
+		$iNewSize = FileGetSize(@ScriptDir & "\unpacked\" & $sChunkFilename)
 		$sNewOffsetAndSize = _procHex(Hex($iNewOffset)) & " " & _procHex(Hex($iNewSize))
 		For $j = 0 To UBound($aHeaderScript) - 1
 			If StringInStr($aHeaderScript[$j], $sOldOffsetAndSize) > 0 Then
@@ -84,7 +95,7 @@ Func writeChunks()
 		Next
 		;ExitLoop
 		; write-out this chunk
-		$hInput = FileOpen(@ScriptDir & "\unpacked\" & $sName & $sExtension, $FO_READ + $FO_BINARY)
+		$hInput = FileOpen(@ScriptDir & "\unpacked\" & $sChunkFilename, $FO_READ + $FO_BINARY)
 		FileWrite($hOutputTmpChunks, FileRead($hInput))
 
 		FileFlush($hOutputTmpChunks)
