@@ -72,14 +72,15 @@ Func writeChunks()
 			ContinueLoop
 		EndIf
 		$sName = $aChunkInfo[1][1]
+		$sNameBare = $sName ; redundancy for non-lzo chunks
 		$sExtension = _getChunkExtensionByType($aChunkInfo[2][1])
 		$sChunkFilename = $sName & $sExtension
 		ConsoleWrite("[#] Adding chunk " & $i & "/" & $iTotalChunks & " (" & $sChunkFilename & ")...             " & @CRLF)
-		$sNameBare = $aTmp[3]
 		If $sExtension = ".lzo" Then
 			Local $sTmp
 			$aTmp = _PathSplit($sChunkFilename, $sTmp, $sTmp, $sTmp, $sTmp)
 			$aTmp = _PathSplit($aTmp[3], $sTmp, $sTmp, $sTmp, $sTmp)
+			$sNameBare = $aTmp[3]
 			$iIndex = StringReplace($aTmp[4], ".", "")
 			If $aChunkInfo[5][1] = 1 Then
 				ConsoleWrite("    [#] Splitting to volume index " & $iIndex & " and recompressing..." & @CRLF)
