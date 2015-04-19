@@ -13,7 +13,7 @@
 
 Global Const $iChunkPadding = 4096
 Global Const $iMultiSizePerVol = 157286400 ; how many bytes each "volume" (in multi-volume LZO chunks) should be
-Global Const $sLzoCompression = "-5" ; -1 is faster, -9 is better. My tests have shown minimal improvement with anything more than 5.
+Global Const $sLzoCompression = "-5" ; -1 is faster, -9 is better
 
 If Not FileExists(@ScriptDir & "\unpacked") Then
 	ConsoleWrite("[!] Folder 'unpacked' does not exist. Unpack something first." & @CRLF)
@@ -75,11 +75,11 @@ Func writeChunks()
 		$sExtension = _getChunkExtensionByType($aChunkInfo[2][1])
 		$sChunkFilename = $sName & $sExtension
 		ConsoleWrite("[#] Adding chunk " & $i & "/" & $iTotalChunks & " (" & $sChunkFilename & ")...             " & @CRLF)
+		$sNameBare = $aTmp[3]
 		If $sExtension = ".lzo" Then
 			Local $sTmp
 			$aTmp = _PathSplit($sChunkFilename, $sTmp, $sTmp, $sTmp, $sTmp)
 			$aTmp = _PathSplit($aTmp[3], $sTmp, $sTmp, $sTmp, $sTmp)
-			$sNameBare = $aTmp[3]
 			$iIndex = StringReplace($aTmp[4], ".", "")
 			If $aChunkInfo[5][1] = 1 Then
 				ConsoleWrite("    [#] Splitting to volume index " & $iIndex & " and recompressing..." & @CRLF)
@@ -99,7 +99,9 @@ Func writeChunks()
 			Else
 				; not a multi-volume LZO, but still needs to be recompressed
 				ConsoleWrite("    [#] Recompressing..." & @CRLF)
-				RunWait(@ComSpec & ' /c ' & @ScriptDir & '\inc\lzop ' & $sLzoCompression & ' -o ' & @ScriptDir & "\unpacked\" & $sChunkFilename & ' < ' & $sNameBare & ".img", @ScriptDir & "\unpacked", @SW_HIDE, $STDOUT_CHILD)
+				;ConsoleWrite(@ComSpec & ' /c ' & @ScriptDir & '\inc\lzop ' & $sLzoCompression & ' -o ' & @ScriptDir & "\unpacked\" & $sChunkFilename & ' < ' & @ScriptDir & "\unpacked\" & $sNameBare & ".img")
+				RunWait(@ComSpec & ' /c ' & @ScriptDir & '\inc\lzop ' & $sLzoCompression & ' -o ' & @ScriptDir & "\unpacked\" & $sChunkFilename & ' < ' & @ScriptDir & "\unpacked\" & $sNameBare & ".img", @ScriptDir & "\unpacked", @SW_HIDE, $STDOUT_CHILD)
+				;ConsoleWrite("---" & @CRLF)
 			EndIf
 		EndIf
 		If Not FileExists(@ScriptDir & "\unpacked\" & $sChunkFilename) Then
@@ -116,6 +118,17 @@ Func writeChunks()
 			If StringInStr($aHeaderScript[$j], $sOldOffsetAndSize) > 0 Then
 				; update the in-memory header script
 				$aHeaderScript[$j] = StringReplace($aHeaderScript[$j], $sOldOffsetAndSize, $sNewOffsetAndSize)
+				; update the size parameter for this chunk's extract/write command (always appears after the chunk's load command)
+				$sOldSize = StringReplace($aChunkInfo[4][1], "0x", "")
+				For $k = $j To UBound($aHeaderScript) - 1
+					If StringInStr($aHeaderScript[$k], $sOldSize & " " & $sNameBare & " 1") > 0 Then
+						; multi-volume LZO extraction commands
+						$aHeaderScript[$k] = StringReplace($aHeaderScript[$k], ($sOldSize & " " & $sNameBare & " 1"), (_procHex(Hex($iNewSize)) & " " & $sNameBare & " 1"))
+					ElseIf StringInStr($aHeaderScript[$k], $sNameBare & " " & $sOldSize & " 1") > 0 Then
+						; mmc write commands
+						$aHeaderScript[$k] = StringReplace($aHeaderScript[$k], ($sNameBare & " " & $sOldSize & " 1"), ($sNameBare & " " & _procHex(Hex($iNewSize)) & " 1"))
+					EndIf
+				Next
 				; write-back changes to the INI
 				$aChunkInfo[3][1] = _procHex(Hex($iNewOffset))
 				$aChunkInfo[4][1] = _procHex(Hex($iNewSize))
@@ -135,7 +148,7 @@ Func writeChunks()
 		While 1
 			If Mod(($iFileSize + $iPadding), $iChunkPadding) = 0 Then
 				;ConsoleWrite("    [i] File size before padding = " & $iFileSize & @CRLF)
-				For $k = 1 To $iPadding
+				For $l = 1 To $iPadding
 					FileWrite($hOutputTmpChunks, Chr(0xFF))
 				Next
 				FileFlush($hOutputTmpChunks)
