@@ -131,12 +131,19 @@ Func processChunkInfo()
 	Next
 	; process the last-chunk padding
 
-	Local $xMagicFooter = StringToBinary("ÿÿÿÿ" & $MAGIC_FOOTER)
+	Local $xMagicFooter = Binary("0xFFFFFFFF") & StringToBinary($MAGIC_FOOTER)
 	$iPos = _BinaryInBin($sFileContents, $xMagicFooter, 1, $iLastPos) - 1 ;remember - first pos is 1 in autoit, but 0 in hex editors
-	$iPos += 4; four bytes of dummy data to ensure we got the best match
 	If $iPos < 1 Then
-		ConsoleWrite(@CRLF & "[!] Could not find magic footer!" & @CRLF)
-		Exit
+		; try again with a different dummy. Possibly unsafe, be sure to verify
+		$xMagicFooter = Binary("0x00") & StringToBinary($MAGIC_FOOTER)
+		$iPos = _BinaryInBin($sFileContents, $xMagicFooter, 1, $iLastPos) - 1
+		If $iPos < 1 Then
+			ConsoleWrite(@CRLF & "[!] Could not find magic footer!" & @CRLF)
+			Exit
+		EndIf
+		$iPos += 1; skip over the one byte of dummy data we prepended to magic
+	Else
+		$iPos += 4; skip over the four bytes of dummy data we prepended to magic
 	EndIf
 	; skip-over the magic numbers
 	$iPos += 8
@@ -145,6 +152,9 @@ Func processChunkInfo()
 	; get the footer command (or whatever it is)
 	$sFooterCmd = BinaryMid($sFileContents, $iPos + 1 + 8)
 	ConsoleWrite("[i] Footer command (raw binary) = " & $sFooterCmd & @CRLF)
+	ConsoleWrite("[i] Footer command (plain text): " & @CRLF)
+	ConsoleWrite(BinaryToString($sFooterCmd) & @CRLF)
+	ConsoleWrite("[!] Be sure to verify the above footer command was correctly extracted! If it's not right, the extraction and/or rebuild will likely fail!" & @CRLF)
 EndFunc
 
 Func extractChunks()
