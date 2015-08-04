@@ -176,11 +176,39 @@ Func extractChunks()
 		FileClose($hOutput) ; FileClose will flush buffers automatically
 		; extract lzo-compressed images
 		If $sExtension = ".lzo" Then
-			RunWait(@ComSpec & ' /c ' & @ScriptDir & '\inc\lzop -x < ' & @ScriptDir & "\unpacked\" & $sFilename, @ScriptDir & "\unpacked", @SW_HIDE, $STDOUT_CHILD)
+			RunWait(@ComSpec & ' /c ' & @ScriptDir & '\inc\lzop -o ' & @ScriptDir & "\unpacked\" & StringReplace($sFilename, ".lzo", ".imgchunk") & ' -x < ' & @ScriptDir & "\unpacked\" & $sFilename, @ScriptDir & "\unpacked", @SW_HIDE, $STDOUT_CHILD)
 			FileDelete(@ScriptDir & "\unpacked\" & $sFilename)
 		EndIf
 	Next
 	; join any "multi-volume" images
+	$hSearch1 = FileFindFirstFile(@ScriptDir & "\unpacked\*.0.imgchunk")
+	Local $sImgFiles[0]
+	If $hSearch1 <> -1 Then
+		While 1
+			$sFilename = FileFindNextFile($hSearch1)
+			If @error Then ExitLoop
+			_ArrayAdd($sImgFiles, $sFilename)
+		WEnd
+		For $i = 1 To UBound($sImgFiles)
+			Local $sTmp
+			$aTmp = _PathSplit($sImgFiles[$i -1], $sTmp, $sTmp, $sTmp, $sTmp)
+			$sOutputImageName = StringReplace($aTmp[3], ".0", "")
+			ConsoleWrite("[#] Re-assembling " & $sOutputImageName & ".img..." & @CRLF)
+			$hOutputImage = FileOpen(@ScriptDir & "\unpacked\" & $sOutputImageName & ".img", $FO_APPEND + $FO_BINARY)
+			$hSearch2 = FileFindFirstFile(@ScriptDir & "\unpacked\" & $sOutputImageName & ".?.imgchunk")
+			While 1
+				$sFilename = FileFindNextFile($hSearch2)
+				If @error Then ExitLoop
+				FileWrite($hOutputImage, FileRead(@ScriptDir & "\unpacked\" & $sFilename))
+				FileFlush($hOutputImage)
+				FileDelete(@ScriptDir & "\unpacked\" & $sFilename)
+			WEnd
+		Next
+	Else
+		ConsoleWrite("[i] No multi-volume images found" & @CRLF)
+	EndIf
+
+	; legacy support
 	$hSearch1 = FileFindFirstFile(@ScriptDir & "\unpacked\*.imgaa")
 	Local $sImgFiles[0]
 	If $hSearch1 <> -1 Then
@@ -204,9 +232,8 @@ Func extractChunks()
 				FileDelete(@ScriptDir & "\unpacked\" & $sFilename)
 			WEnd
 		Next
-	Else
-		ConsoleWrite("[i] No multi-volume images found" & @CRLF)
 	EndIf
+
 EndFunc
 
 Func dumpInfo()
