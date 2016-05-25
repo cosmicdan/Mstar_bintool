@@ -12,8 +12,11 @@
 #include "inc\Common.au3"
 
 Global Const $iChunkPadding = 4096
-Global Const $iMultiSizePerVol = 157286400 ; how many bytes each "volume" (in multi-volume LZO chunks) should be
-Global Const $sLzoCompression = "-5" ; -1 is faster, -9 is better
+Global Const $iMultiSizePerVol = 157286400 ; size of each "volume" (in multi-volume LZO chunks). Should match original device, which will be found when unpacking the bin
+Global Const $sLzoCompression = "-1" ; Compression level
+;Global Const $sLzoCompression = ""
+
+Global Const $bKeepIntermediates = false ; enable to keep lzo intermediates (advanced use)
 
 If Not FileExists(@ScriptDir & "\unpacked") Then
 	ConsoleWrite("[!] Folder 'unpacked' does not exist. Unpack something first." & @CRLF)
@@ -91,17 +94,21 @@ Func writeChunks()
 				FileWrite($hVolumeIntermediate, BinaryMid(FileRead($hVolumeInput), $iMultiSizePerVol * $iIndex + 1, $iMultiSizePerVol))
 				FileClose($hVolumeInput)
 				FileClose($hVolumeIntermediate)
+				ConsoleWrite("        [i] Uncompressed chunk size is " & FileGetSize($sVolumeIntermediate) / 1024 / 1024 & "MB" & @CRLF)
 				; recompress it
-				RunWait(@ComSpec & ' /c ' & @ScriptDir & '\inc\lzop ' & $sLzoCompression & ' -o ' & @ScriptDir & "\unpacked\" & $sChunkFilename & ' < ' & $sVolumeIntermediate, @ScriptDir & "\unpacked", @SW_HIDE, $STDOUT_CHILD)
+				RunWait(@ComSpec & ' /c ' & @ScriptDir & '\inc\lzop ' & $sLzoCompression & ' -f -o ' & @ScriptDir & "\unpacked\" & $sChunkFilename & ' < ' & $sVolumeIntermediate, @ScriptDir & "\unpacked", @SW_HIDE, $STDOUT_CHILD)
+				ConsoleWrite("        [i] Compressed chunk size is " & FileGetSize(@ScriptDir & "\unpacked\" & $sChunkFilename) / 1024 / 1024 & "MB" & @CRLF)
 				; increment the intermediate "volume index" (letter rather than number)
 				$sIntermediateMultiIndex = Chr(Asc($sIntermediateMultiIndex) + 1)
 				; delete the intermediate volume now that we're done recompressing it
-				FileDelete($sVolumeIntermediate)
+				If Not $bKeepIntermediates Then
+					FileDelete($sVolumeIntermediate)
+				EndIf
 			Else
 				; not a multi-volume LZO, but still needs to be recompressed
 				ConsoleWrite("    [#] Recompressing..." & @CRLF)
 				;ConsoleWrite(@ComSpec & ' /c ' & @ScriptDir & '\inc\lzop ' & $sLzoCompression & ' -o ' & @ScriptDir & "\unpacked\" & $sChunkFilename & ' < ' & @ScriptDir & "\unpacked\" & $sNameBare & ".img")
-				RunWait(@ComSpec & ' /c ' & @ScriptDir & '\inc\lzop ' & $sLzoCompression & ' -o ' & @ScriptDir & "\unpacked\" & $sChunkFilename & ' < ' & @ScriptDir & "\unpacked\" & $sNameBare & ".img", @ScriptDir & "\unpacked", @SW_HIDE, $STDOUT_CHILD)
+				RunWait(@ComSpec & ' /c ' & @ScriptDir & '\inc\lzop ' & $sLzoCompression & ' -f -o ' & @ScriptDir & "\unpacked\" & $sChunkFilename & ' < ' & @ScriptDir & "\unpacked\" & $sNameBare & ".img", @ScriptDir & "\unpacked", @SW_HIDE, $STDOUT_CHILD)
 				;ConsoleWrite("---" & @CRLF)
 			EndIf
 		EndIf
@@ -115,25 +122,29 @@ Func writeChunks()
 		$iNewOffset = 16384 + FileGetSize($sOutputTmpChunks) ; returns 0 if file doesn't exist
 		$iNewSize = FileGetSize(@ScriptDir & "\unpacked\" & $sChunkFilename)
 		$sNewOffsetAndSize = _procHex(Hex($iNewOffset)) & " " & _procHex(Hex($iNewSize))
+
 		For $j = 0 To UBound($aHeaderScript) - 1
 			If StringInStr($aHeaderScript[$j], $sOldOffsetAndSize) > 0 Then
-				; update the in-memory header script
-				$aHeaderScript[$j] = StringReplace($aHeaderScript[$j], $sOldOffsetAndSize, $sNewOffsetAndSize)
-				; update the size parameter for this chunk's extract/write command (always appears after the chunk's load command)
-				$sOldSize = StringReplace($aChunkInfo[4][1], "0x", "")
-				For $k = $j To UBound($aHeaderScript) - 1
-					If StringInStr($aHeaderScript[$k], $sOldSize & " " & $sNameBare & " 1") > 0 Then
-						; multi-volume LZO extraction commands
-						$aHeaderScript[$k] = StringReplace($aHeaderScript[$k], ($sOldSize & " " & $sNameBare & " 1"), (_procHex(Hex($iNewSize)) & " " & $sNameBare & " 1"))
-					ElseIf StringInStr($aHeaderScript[$k], $sNameBare & " " & $sOldSize & " 1") > 0 Then
-						; mmc write commands
-						$aHeaderScript[$k] = StringReplace($aHeaderScript[$k], ($sNameBare & " " & $sOldSize & " 1"), ($sNameBare & " " & _procHex(Hex($iNewSize)) & " 1"))
-					EndIf
-				Next
-				; write-back changes to the INI
-				$aChunkInfo[3][1] = _procHex(Hex($iNewOffset))
-				$aChunkInfo[4][1] = _procHex(Hex($iNewSize))
-				IniWriteSection(@ScriptDir & "\unpacked\~bundle_info.ini", "chunk" & $i, $aChunkInfo)
+				If Not ($sOldOffsetAndSize == $sNewOffsetAndSize) Then
+					ConsoleWrite("    [#] Offset and/or size of chunk has changed, updating the header script..." & @CRLF)
+					; update the in-memory header script
+					$aHeaderScript[$j] = StringReplace($aHeaderScript[$j], $sOldOffsetAndSize, $sNewOffsetAndSize)
+					; update the size parameter for this chunk's extract/write command (always appears after the chunk's load command)
+					$sOldSize = StringReplace($aChunkInfo[4][1], "0x", "")
+					For $k = $j To UBound($aHeaderScript) - 1
+						If StringInStr($aHeaderScript[$k], $sOldSize & " " & $sNameBare & " 1") > 0 Then
+							; multi-volume LZO extraction commands
+							$aHeaderScript[$k] = StringReplace($aHeaderScript[$k], ($sOldSize & " " & $sNameBare & " 1"), (_procHex(Hex($iNewSize)) & " " & $sNameBare & " 1"))
+						ElseIf StringInStr($aHeaderScript[$k], $sNameBare & " " & $sOldSize & " 1") > 0 Then
+							; mmc write commands
+							$aHeaderScript[$k] = StringReplace($aHeaderScript[$k], ($sNameBare & " " & $sOldSize & " 1"), ($sNameBare & " " & _procHex(Hex($iNewSize)) & " 1"))
+						EndIf
+					Next
+					; write-back changes to the INI
+					$aChunkInfo[3][1] = _procHex(Hex($iNewOffset))
+					$aChunkInfo[4][1] = _procHex(Hex($iNewSize))
+					IniWriteSection(@ScriptDir & "\unpacked\~bundle_info.ini", "chunk" & $i, $aChunkInfo)
+				EndIf
 			EndIf
 		Next
 		;ExitLoop
@@ -160,7 +171,7 @@ Func writeChunks()
 			EndIf
 		WEnd
 		; delete the recompressed lzo file if necessary
-		If $sExtension = ".lzo" Then
+		If $sExtension = ".lzo" And Not $bKeepIntermediates Then
 			FileDelete(@ScriptDir & "\unpacked\" & $sChunkFilename)
 		EndIf
 	Next

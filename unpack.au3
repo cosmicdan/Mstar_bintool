@@ -26,6 +26,8 @@ Global $sFooterCmd
 Global $iLastPos ; temp val for storing current operating position in binary file
 Global $iChunkPart ; temp val for storing current index/order of "multi-volume" lzo archives
 
+Global $bUnpackLzo = true ; toggle lzo decompression (advanced use)
+
 If Not FileExists(@ScriptDir & "\MstarUpgrade.bin") Then
 	ConsoleWrite("[!] MstarUpgrade.bin not found in current folder" & @CRLF)
 	Exit
@@ -163,7 +165,7 @@ Func extractChunks()
 	For $i = 1 To $iTotalChunks
 		$sExtension = _getChunkExtensionByType($aPartType[$i - 1])
 		$sFilename = $aPartLabel[($i - 1)] & $sExtension
-		If $sExtension = ".lzo" Then
+		If $sExtension = ".lzo" And $bUnpackLzo Then
 			ConsoleWrite("[#] Writing-out and decompressing chunk " & $i & "/" & $iTotalChunks & " (" & $sFilename & ")..." & @CRLF)
 		Else
 			ConsoleWrite("[#] Writing-out chunk " & $i & "/" & $iTotalChunks & " (" & $sFilename & ")..." & @CRLF)
@@ -175,8 +177,10 @@ Func extractChunks()
 		FileWrite($hOutput, $xData)
 		FileClose($hOutput) ; FileClose will flush buffers automatically
 		; extract lzo-compressed images
-		If $sExtension = ".lzo" Then
+		If $sExtension = ".lzo" And $bUnpackLzo Then
+			ConsoleWrite("        [i] Compressed chunk size is " & FileGetSize(@ScriptDir & "\unpacked\" & $sFilename) / 1024 / 1024 & "MB" & @CRLF)
 			RunWait(@ComSpec & ' /c ' & @ScriptDir & '\inc\lzop -o ' & @ScriptDir & "\unpacked\" & StringReplace($sFilename, ".lzo", ".imgchunk") & ' -x < ' & @ScriptDir & "\unpacked\" & $sFilename, @ScriptDir & "\unpacked", @SW_HIDE, $STDOUT_CHILD)
+			ConsoleWrite("        [i] Uncompressed chunk size is " & FileGetSize(@ScriptDir & "\unpacked\" & StringReplace($sFilename, ".lzo", ".imgchunk")) / 1024 / 1024 & "MB" & @CRLF)
 			FileDelete(@ScriptDir & "\unpacked\" & $sFilename)
 		EndIf
 	Next
